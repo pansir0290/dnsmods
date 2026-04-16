@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ====================================================
-# Project: Xray DNS 分流全能修复版 (解决 Fast.com 测速问题)
+# Project: Xray DNS 分流终极全能版 (通用 IP 示例版)
 # Author: pansir0290
 # ====================================================
 
@@ -15,16 +15,26 @@ CONFIG_PATH="/usr/local/etc/xray/config.json"
 [ ! -f "$CONFIG_PATH" ] && CONFIG_PATH="/etc/xray/config.json"
 
 if [ ! -f "$CONFIG_PATH" ]; then
-    echo -e "${RED}未找到 config.json${NC}"
+    echo -e "${RED}未找到 config.json，请确认 Xray 已安装。${NC}"
     exit 1
 fi
 
 # 2. 交互式获取 DNS IP
 echo -e "${GREEN}请输入各平台对应的解锁 DNS (直接回车表示跳过):${NC}"
-read -p "1. YouTube DNS (如 5.102.125.55): " YT_DNS
-read -p "2. Netflix/Fast.com DNS (如 22.22.22.22): " NF_DNS
-read -p "3. OpenAI/ChatGPT DNS: " OAI_DNS
-read -p "4. Google Gemini DNS: " GMN_DNS
+echo -e "${YELLOW}--- 视频流媒体 ---${NC}"
+read -p "1. YouTube DNS (示例 8.8.8.8): " YT_DNS
+read -p "2. Netflix/Fast.com DNS (示例 8.8.4.4): " NF_DNS
+read -p "3. DisneyPlus DNS: " DS_DNS
+read -p "4. HBO Max/Discovery+/Max DNS: " HBO_DNS
+read -p "5. Amazon Prime Video DNS: " AMZ_DNS
+read -p "6. Hulu DNS: " HULU_DNS
+read -p "7. TVB/Viu/BiliBili(港澳台) DNS: " SEA_DNS
+
+echo -e "${YELLOW}--- 国际主流 AI 平台 ---${NC}"
+read -p "8. OpenAI (ChatGPT) DNS: " OAI_DNS
+read -p "9. Anthropic (Claude) DNS: " CLD_DNS
+read -p "10. Google Gemini DNS: " GMN_DNS
+read -p "11. Microsoft Copilot DNS: " CPL_DNS
 
 # 3. 准备备份
 cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
@@ -33,7 +43,7 @@ cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
 OUTBOUND_TAG=$(jq -r '.outbounds[] | select(.protocol=="freedom") | .tag' "$CONFIG_PATH" | head -n 1)
 [ -z "$OUTBOUND_TAG" ] && OUTBOUND_TAG="direct"
 
-# 5. 定义处理函数
+# 5. 定义构建函数
 NEW_DNS_SERVERS="[]"
 NEW_ROUTING_RULES="[]"
 
@@ -46,28 +56,40 @@ add_rule() {
     fi
 }
 
-# 6. 分配域名簇 (重点补全了 Netflix 测速域名)
-add_rule "$YT_DNS" '["domain:youtube.com","domain:googlevideo.com","domain:youtu.be","domain:ytimg.com"]'
+# 6. 分配域名簇
+add_rule "$YT_DNS" '["domain:youtube.com","domain:googlevideo.com","domain:youtu.be","domain:ytimg.com","domain:ggpht.com"]'
 add_rule "$NF_DNS" '["domain:netflix.com","domain:fast.com","domain:netflix.net","domain:nflxvideo.net","domain:nflxext.com","domain:nflxso.net"]'
+add_rule "$DS_DNS" '["domain:disneyplus.com","domain:disney.com","domain:dssott.com","domain:disneylatino.com"]'
+add_rule "$HBO_DNS" '["domain:hbomax.com","domain:hbo.com","domain:discovery.com","domain:max.com"]'
+add_rule "$AMZ_DNS" '["domain:primevideo.com","domain:amazonvideo.com","domain:pv-cdn.net"]'
+add_rule "$HULU_DNS" '["domain:hulu.com","domain:huluim.com","domain:hulustream.com"]'
+add_rule "$SEA_DNS" '["domain:tvb.com","domain:viu.com","domain:bilibili.com"]'
 add_rule "$OAI_DNS" '["domain:openai.com","domain:chatgpt.com","domain:oaistatic.com","domain:oaiusercontent.com"]'
-add_rule "$GMN_DNS" '["domain:gemini.google.com","domain:bard.google.com"]'
+add_rule "$CLD_DNS" '["domain:anthropic.com","domain:claude.ai"]'
+add_rule "$GMN_DNS" '["domain:gemini.google.com","domain:bard.google.com","domain:proactive.google.com"]'
+add_rule "$CPL_DNS" '["domain:bing.com","domain:edgeservices.bing.com","domain:copilot.microsoft.com"]'
 
-# 7. 合并 JSON (核心修复逻辑：清空旧规则，置顶新规则)
-# 使用 select 过滤掉包含关键词的旧规则，避免配置无限堆叠
+# 7. 合并 JSON (修正逻辑，防止报错)
 jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES" '
 .dns.servers = ($dns_svrs + ["localhost"]) |
 .routing.domainStrategy = "IPOnDemand" |
-.routing.rules = ($rt_rules + [.routing.rules[] | select(.domain == null or (
-    (. | contains(["youtube","netflix","fast.com","nflx","openai","chatgpt","gemini"])) | not
-))])
+.routing.rules = ($rt_rules + [.routing.rules[] | select(
+    (.domain | tostring | (
+        contains("youtube") or contains("netflix") or contains("fast.com") or 
+        contains("disney") or contains("hbomax") or contains("primevideo") or 
+        contains("hulu") or contains("tvb") or contains("viu") or 
+        contains("openai") or contains("chatgpt") or contains("anthropic") or 
+        contains("claude") or contains("gemini") or contains("bing")
+    )) | not
+)])
 ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
 
 # 8. 检查与重启
 /usr/local/bin/xray -test -config "$CONFIG_PATH"
 if [ $? -eq 0 ]; then
     systemctl restart xray
-    echo -e "${GREEN}全能版配置成功！已包含 Fast.com 测速分流。${NC}"
+    echo -e "${GREEN}✅ 终极全能版配置成功！已安全部署。${NC}"
 else
     mv "${CONFIG_PATH}.bak" "$CONFIG_PATH"
-    echo -e "${RED}配置错误，已自动回滚。请检查 jq 是否安装。${NC}"
+    echo -e "${RED}❌ 配置错误，已自动回滚。请检查 jq 逻辑。${NC}"
 fi
