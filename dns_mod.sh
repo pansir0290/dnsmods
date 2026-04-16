@@ -47,7 +47,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # 3. 人机交互获取 DNS IP
-read -p "请输入用于流媒体解锁的 DNS IP (例如 5.102.125.55): " MEDIA_DNS
+read -p "请输入用于流媒体解锁的 DNS IP (例如 8.8.8.8): " MEDIA_DNS
 
 # 校验 IP 格式
 if [[ ! $MEDIA_DNS =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
