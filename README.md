@@ -1,69 +1,93 @@
-# dnsmods
-Xray DNS 分流自动配置工具 (DNSMods)
+#!/bin/bash
 
-这是一个专为 Xray-core 设计的自动化脚本，旨在通过人机交互的方式，快速实现流媒体（YouTube/Netflix）的精准 DNS 分流解锁，同时确保非流媒体流量遵循 VPS 本地的原生 DNS 设置，兼顾解锁与访问速度。
-🚀 核心功能
+# ====================================================
+# Project: Xray DNS 终极全能全量版 (V6 - 11项交互)
+# Author: pansir0290
+# ====================================================
 
-    智能探测：自动识别 config.json 路径，适配多种安装脚本。
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-    出站匹配：动态扫描 outbounds，自动锁定 freedom 协议标签，防止由于 Tag 错误导致的网络中断。
+CONFIG_PATH="/usr/local/etc/xray/config.json"
+[ ! -f "$CONFIG_PATH" ] && CONFIG_PATH="/etc/xray/config.json"
 
-    精准分流：
+# 1. 欢迎信息与交互
+echo -e "${YELLOW}开始执行 Xray 全平台 DNS 分流配置 (V6 全量版)...${NC}"
+echo -e "${GREEN}请输入各平台对应的解锁 DNS (示例 8.8.8.8，回车跳过):${NC}"
 
-        流媒体：通过用户指定的 DNS（如解锁用 DNS）解析。
+echo -e "${YELLOW}--- 视频流媒体 ---${NC}"
+read -p "1. YouTube DNS: " YT_DNS
+read -p "2. Netflix/Fast.com DNS: " NF_DNS
+read -p "3. DisneyPlus DNS: " DS_DNS
+read -p "4. HBO/Max/Discovery+ DNS: " HBO_DNS
+read -p "5. Amazon Prime Video DNS: " AMZ_DNS
+read -p "6. Hulu DNS: " HULU_DNS
+read -p "7. TVB/Viu/BiliBili(港澳台) DNS: " SEA_DNS
 
-        常规流量：通过系统本地 DNS 解析，避免 CDN 绕路，降低延迟。
+echo -e "${YELLOW}--- 国际主流 AI 平台 ---${NC}"
+read -p "8. OpenAI (ChatGPT) DNS: " OAI_DNS
+read -p "9. Anthropic (Claude) DNS: " CLD_DNS
+read -p "10. Google Gemini DNS: " GMN_DNS
+read -p "11. Microsoft Copilot DNS: " CPL_DNS
 
-    安全机制：自动备份原配置，执行 xray -test 语法检查，若配置有误则自动回退，确保服务高可用。
+# 2. 备份
+cp "$CONFIG_PATH" "${CONFIG_PATH}.bak_$(date +%s)"
 
-    幂等操作：使用 jq 进行 JSON 修改，多次运行不会导致配置堆叠。
+# 3. 识别出站 Tag
+OUTBOUND_TAG=$(jq -r '.outbounds[] | select(.protocol=="freedom") | .tag' "$CONFIG_PATH" | head -n 1)
+[ -z "$OUTBOUND_TAG" ] && OUTBOUND_TAG="direct"
 
-📦 快速使用
+# 4. 构建函数
+NEW_DNS_SERVERS="[]"
+NEW_ROUTING_RULES="[]"
 
-在你的 VPS 终端直接执行以下一键命令：
-```bash
-wget -O dns_mod.sh https://raw.githubusercontent.com/pansir0290/dnsmods/main/dns_mod.sh && bash dns_mod.sh
-
-```
-
-
-🛠️ 实现原理
-
-该脚本通过修改 Xray 的 routing 与 dns 模块，将 domainStrategy 设置为 IPOnDemand。当访问流媒体域名时，Xray 会拦截解析请求并定向发送至用户指定的解锁 DNS，从而获取特定区域的 IP 地址。
-
-📋 依赖要求
-
-系统：Debian / Ubuntu / CentOS
-
-内核：Xray-core (已安装并正常运行)
-
-工具：脚本会自动检查并安装 jq
-
-📄 配置文件参考
-
-运行脚本后，你的 config.json 将会自动增加如下逻辑：
-JSON
-
-"dns": {
-  "servers": [
-    {
-      "address": "你的解锁DNS",
-      "port": 53,
-      "domains": ["domain:youtube.com", "domain:netflix.com", "..."]
-    },
-    "localhost"
-  ]
+add_rule() {
+    local dns_ip=$1
+    local domains=$2
+    if [ -n "$dns_ip" ]; then
+        NEW_DNS_SERVERS=$(echo $NEW_DNS_SERVERS | jq --arg ip "$dns_ip" --argjson doms "$domains" '. += [{"address": $ip, "port": 53, "domains": $doms, "skipFallback": true}]')
+        NEW_ROUTING_RULES=$(echo $NEW_ROUTING_RULES | jq --arg tag "$OUTBOUND_TAG" --argjson doms "$domains" '. += [{"type": "field", "outboundTag": $tag, "domain": $doms}]')
+    fi
 }
 
-⚠️ 注意事项
+# 5. 分配域名簇 (全量补全)
+add_rule "$YT_DNS" '["domain:youtube.com","domain:googlevideo.com","domain:youtu.be","domain:ytimg.com","domain:ggpht.com"]'
+add_rule "$NF_DNS" '["domain:netflix.com","domain:fast.com","domain:netflix.net","domain:nflxvideo.net","domain:nflxext.com","domain:nflxso.net","domain:nflximg.net","geosite:netflix"]'
+add_rule "$DS_DNS" '["domain:disneyplus.com","domain:disney.com","domain:dssott.com","domain:disneylatino.com"]'
+add_rule "$HBO_DNS" '["domain:hbomax.com","domain:hbo.com","domain:discovery.com","domain:max.com"]'
+add_rule "$AMZ_DNS" '["domain:primevideo.com","domain:amazonvideo.com","domain:pv-cdn.net"]'
+add_rule "$HULU_DNS" '["domain:hulu.com","domain:huluim.com","domain:hulustream.com"]'
+add_rule "$SEA_DNS" '["domain:tvb.com","domain:viu.com","domain:bilibili.com"]'
+add_rule "$OAI_DNS" '["domain:openai.com","domain:chatgpt.com","domain:oaistatic.com","domain:oaiusercontent.com"]'
+add_rule "$CLD_DNS" '["domain:anthropic.com","domain:claude.ai"]'
+add_rule "$GMN_DNS" '["domain:gemini.google.com","domain:bard.google.com","domain:proactive.google.com"]'
+add_rule "$CPL_DNS" '["domain:bing.com","domain:edgeservices.bing.com","domain:copilot.microsoft.com"]'
 
-Tag 检查：请确保你的 Xray 配置中至少有一个 protocol 为 freedom 的出站规则。
+# 6. 合并 JSON 并解决回环与测速定位
+# 加入 UseIPv4 策略，防止 IPv6 绕过分流导致定位失败
+jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES" '
+.dns.servers = ($dns_svrs + ["localhost"]) |
+.dns.queryStrategy = "UseIPv4" |
+.routing.domainStrategy = "IPOnDemand" |
+.routing.rules = ($rt_rules + [.routing.rules[] | select(
+    (.domain | tostring | (
+        contains("youtube") or contains("netflix") or contains("fast.com") or 
+        contains("disney") or contains("hbomax") or contains("primevideo") or 
+        contains("hulu") or contains("tvb") or contains("viu") or 
+        contains("openai") or contains("chatgpt") or contains("anthropic") or 
+        contains("claude") or contains("gemini") or contains("bing") or contains("nflx")
+    )) | not
+)])
+' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
 
-客户端配置：建议在客户端（如 v2rayN/Clash）开启“嗅探 (Sniffing)”，以确保域名能正确传达至服务端触发分流逻辑。
-
-🤝 贡献与反馈
-
-如果你在使用过程中发现特定的流媒体域名需要补充，欢迎提交 Pull Request 或 Issue。
-提示
-
-你可以直接把这段内容复制到你 GitHub 仓库的 README.md 文件里。这样不仅看起来很专业，下次你在新服务器上部署时，直接打开仓库页面就能看到那行一键执行的命令了。
+# 7. 检查与重启
+/usr/local/bin/xray -test -config "$CONFIG_PATH"
+if [ $? -eq 0 ]; then
+    systemctl restart xray
+    echo -e "${GREEN}✅ 终极全量版配置成功！共处理 11 项分流规则。${NC}"
+else
+    mv "${CONFIG_PATH}.bak_*" "$CONFIG_PATH"
+    echo -e "${RED}❌ 配置错误，已自动回滚。${NC}"
+fi
