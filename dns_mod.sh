@@ -1,124 +1,90 @@
 #!/bin/bash
 
 # ====================================================
-# Project: Xray 流媒体 DNS 精准分流配置工具
-# Author: pansir0290 (Modified for IT Pro)
+# Project: Xray 流媒体 & AI 平台 DNS 全能分流工具
+# Author: pansir0290
 # ====================================================
 
-# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${YELLOW}开始执行 Xray DNS 分流自动配置...${NC}"
+echo -e "${YELLOW}开始执行 Xray 全平台 (流媒体 + AI) DNS 分流配置...${NC}"
 
-# 1. 查找 Xray 配置文件位置
-CONFIG_PATH=""
-SEARCH_PATHS=(
-    "/usr/local/etc/xray/config.json"
-    "/etc/xray/config.json"
-    "/usr/local/bin/config.json"
-)
-
-for path in "${SEARCH_PATHS[@]}"; do
-    if [ -f "$path" ]; then
-        CONFIG_PATH=$path
-        break
-    fi
-done
-
-if [ -z "$CONFIG_PATH" ]; then
-    echo -e "${RED}错误：未找到 Xray 配置文件，请手动指定路径。${NC}"
-    read -p "请输入 config.json 的完整路径: " CONFIG_PATH
-fi
+# 1. 查找配置文件
+CONFIG_PATH="/usr/local/etc/xray/config.json"
+[ ! -f "$CONFIG_PATH" ] && CONFIG_PATH="/etc/xray/config.json"
 
 if [ ! -f "$CONFIG_PATH" ]; then
-    echo -e "${RED}路径无效，退出。${NC}"
+    echo -e "${RED}未找到 config.json，请确认 Xray 已安装。${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}检测到配置文件: $CONFIG_PATH${NC}"
+# 2. 交互式获取 DNS IP
+echo -e "${GREEN}请输入各平台对应的解锁 DNS (直接回车表示跳过):${NC}"
+echo -e "${YELLOW}--- 视频流媒体 ---${NC}"
+read -p "1. YouTube DNS: " YT_DNS
+read -p "2. Netflix DNS: " NF_DNS
+read -p "3. DisneyPlus DNS: " DS_DNS
+read -p "4. HBO Max/Discovery+ DNS: " HBO_DNS
+read -p "5. Amazon Prime Video DNS: " AMZ_DNS
 
-# 2. 检查并安装 jq
-if ! command -v jq &> /dev/null; then
-    echo "正在安装必要的 JSON 处理工具 jq..."
-    apt-get update && apt-get install -y jq
-fi
+echo -e "${YELLOW}--- 国际主流 AI 平台 ---${NC}"
+read -p "6. OpenAI (ChatGPT) DNS: " OAI_DNS
+read -p "7. Anthropic (Claude) DNS: " CLD_DNS
+read -p "8. Google Gemini (Bard) DNS: " GMN_DNS
+read -p "9. Microsoft Copilot (Bing AI) DNS: " CPL_DNS
 
-# 3. 人机交互获取 DNS IP
-read -p "请输入用于流媒体解锁的 DNS IP (例如 8.8.8.8): " MEDIA_DNS
-
-# 校验 IP 格式
-if [[ ! $MEDIA_DNS =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-    echo -e "${RED}无效的 IP 格式，退出。${NC}"
-    exit 1
-fi
-
-# 4. 自动识别 Outbound Tag
-# 寻找 protocol 为 freedom 的 tag，如果找不到则默认用 direct
-OUTBOUND_TAG=$(jq -r '.outbounds[] | select(.protocol=="freedom") | .tag' "$CONFIG_PATH" | head -n 1)
-if [ -z "$OUTBOUND_TAG" ] || [ "$OUTBOUND_TAG" == "null" ]; then
-    OUTBOUND_TAG="direct"
-fi
-
-echo -e "识别到出站标签为: ${YELLOW}$OUTBOUND_TAG${NC}"
-
-# 5. 备份原配置
+# 3. 准备备份
 cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
 
-# 6. 使用 jq 修改配置
-# 注入 DNS 规则和路由规则
-jq --arg mdns "$MEDIA_DNS" --arg tag "$OUTBOUND_TAG" '
-.dns = {
-  "servers": [
-    {
-      "address": $mdns,
-      "port": 53,
-      "domains": [
-        "domain:youtube.com",
-        "domain:googlevideo.com",
-        "domain:youtu.be",
-        "domain:ytimg.com",
-        "domain:ggpht.com",
-        "domain:netflix.com",
-        "domain:netflix.net",
-        "domain:nflxvideo.net",
-        "domain:nflxext.com",
-        "domain:nflxso.net"
-      ]
-    },
-    "localhost"
-  ]
-} |
-.routing.domainStrategy = "IPOnDemand" |
-.routing.rules = [
-  {
-    "type": "field",
-    "outboundTag": $tag,
-    "domain": [
-      "domain:youtube.com",
-      "domain:googlevideo.com",
-      "domain:youtu.be",
-      "domain:ytimg.com",
-      "domain:ggpht.com",
-      "domain:netflix.com",
-      "domain:netflix.net",
-      "domain:nflxvideo.net",
-      "domain:nflxext.com",
-      "domain:nflxso.net"
-    ]
-  }
-] + [.routing.rules[] | select(.domain | index("youtube.com") | not)]
-' "$CONFIG_PATH" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_PATH"
+# 4. 自动识别出站 Tag
+OUTBOUND_TAG=$(jq -r '.outbounds[] | select(.protocol=="freedom") | .tag' "$CONFIG_PATH" | head -n 1)
+[ -z "$OUTBOUND_TAG" ] && OUTBOUND_TAG="direct"
 
-# 7. 语法检查与重启
-xray -test -config "$CONFIG_PATH"
+# 5. 定义处理函数
+NEW_DNS_SERVERS="[]"
+NEW_ROUTING_RULES="[]"
+
+add_rule() {
+    local dns_ip=$1
+    local domains=$2
+    if [ -n "$dns_ip" ]; then
+        NEW_DNS_SERVERS=$(echo $NEW_DNS_SERVERS | jq --arg ip "$dns_ip" --argjson doms "$domains" '. += [{"address": $ip, "port": 53, "domains": $doms}]')
+        NEW_ROUTING_RULES=$(echo $NEW_ROUTING_RULES | jq --arg tag "$OUTBOUND_TAG" --argjson doms "$domains" '. += [{"type": "field", "outboundTag": $tag, "domain": $doms}]')
+    fi
+}
+
+# 6. 分配域名簇
+# 视频类
+add_rule "$YT_DNS" '["domain:youtube.com","domain:googlevideo.com","domain:youtu.be","domain:ytimg.com"]'
+add_rule "$NF_DNS" '["domain:netflix.com","domain:netflix.net","domain:nflxvideo.net","domain:nflxso.net"]'
+add_rule "$DS_DNS" '["domain:disneyplus.com","domain:disney.com","domain:dssott.com"]'
+add_rule "$HBO_DNS" '["domain:hbomax.com","domain:hbo.com","domain:max.com"]'
+add_rule "$AMZ_DNS" '["domain:primevideo.com","domain:amazonvideo.com"]'
+
+# AI 类 (重点域名补充)
+add_rule "$OAI_DNS" '["domain:openai.com","domain:chatgpt.com","domain:oaistatic.com","domain:oaiusercontent.com"]'
+add_rule "$CLD_DNS" '["domain:anthropic.com","domain:claude.ai"]'
+add_rule "$GMN_DNS" '["domain:gemini.google.com","domain:bard.google.com","domain:proactive.google.com"]'
+add_rule "$CPL_DNS" '["domain:bing.com","domain:edgeservices.bing.com","domain:copilot.microsoft.com"]'
+
+# 7. 合并 JSON 并清理冗余规则
+jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES" '
+.dns.servers = ($dns_svrs + ["localhost"]) |
+.routing.domainStrategy = "IPOnDemand" |
+.routing.rules = ($rt_rules + [.routing.rules[] | select(.domain == null or (
+    (. | contains(["youtube","netflix","disney","hbomax","openai","chatgpt","anthropic","claude","gemini","bing"])) | not
+))])
+' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
+
+# 8. 检查与重启
+/usr/local/bin/xray -test -config "$CONFIG_PATH"
 if [ $? -eq 0 ]; then
     systemctl restart xray
-    echo -e "${GREEN}配置成功并已重启 Xray！${NC}"
-    echo -e "流媒体正在通过 ${YELLOW}$MEDIA_DNS${NC} 进行解锁。"
+    echo -e "${GREEN}流媒体与 AI 平台分流配置成功！${NC}"
 else
     mv "${CONFIG_PATH}.bak" "$CONFIG_PATH"
-    echo -e "${RED}配置语法错误，已自动回滚备份。请检查 config.json 结构。${NC}"
+    echo -e "${RED}配置错误，已回滚。${NC}"
 fi
