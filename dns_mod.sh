@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ====================================================
-# Project: Xray DNS 终极全能版 (环境修复+精准回滚)
+# Project: Xray DNS 终极自动化版 (环境自愈 + 11项全量分流)
 # Author: pansir0290
 # ====================================================
 
@@ -10,30 +10,26 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-CONFIG_PATH="/usr/local/etc/xray/config.json"
-[ ! -f "$CONFIG_PATH" ] && CONFIG_PATH="/etc/xray/config.json"
+# --- 1. 强制补齐环境与目录自愈 ---
+echo -e "${YELLOW}正在检查运行环境...${NC}"
 
-# --- 1. 深度补齐资源文件 ---
-check_geo_files() {
-    # 针对你报错的路径进行补全
-    local target_dirs=("/usr/local/bin" "/usr/local/share/xray")
-    
-    for dir in "${target_dirs[@]}"; do
-        if [ ! -d "$dir" ]; then mkdir -p "$dir"; fi
-        if [ ! -f "$dir/geosite.dat" ] || [ ! -f "$dir/geoip.dat" ]; then
-            echo -e "${YELLOW}检测到 $dir 缺少资源文件，正在下载...${NC}"
-            wget -O "$dir/geosite.dat" https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
-            wget -O "$dir/geoip.dat" https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
-        fi
-    done
-}
+# 确保目录存在
+[ ! -d "/usr/local/bin" ] && mkdir -p /usr/local/bin
+[ ! -d "/usr/local/etc/xray" ] && mkdir -p /usr/local/etc/xray
 
-check_geo_files
+# 暴力补齐 geosite.dat (解决报错根源)
+if [ ! -f "/usr/local/bin/geosite.dat" ]; then
+    echo -e "${YELLOW}缺少 geosite.dat，正在强制下载...${NC}"
+    wget -O /usr/local/bin/geosite.dat https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
+fi
 
-# --- 2. 交互界面 ---
-echo -e "${YELLOW}开始执行 Xray 全平台 DNS 分流配置 (V6.2 强健版)...${NC}"
-echo -e "${GREEN}请输入各平台对应的解锁 DNS (回车跳过):${NC}"
+if [ ! -f "/usr/local/bin/geoip.dat" ]; then
+    echo -e "${YELLOW}缺少 geoip.dat，正在强制下载...${NC}"
+    wget -O /usr/local/bin/geoip.dat https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+fi
 
+# --- 2. 交互式获取 DNS IP ---
+echo -e "${GREEN}请输入各平台对应的解锁 DNS (示例 8.8.8.8，回车跳过):${NC}"
 echo -e "${YELLOW}--- 视频流媒体 ---${NC}"
 read -p "1. YouTube DNS: " YT_DNS
 read -p "2. Netflix/Fast.com DNS: " NF_DNS
@@ -49,16 +45,19 @@ read -p "9. Anthropic (Claude) DNS: " CLD_DNS
 read -p "10. Google Gemini DNS: " GMN_DNS
 read -p "11. Microsoft Copilot DNS: " CPL_DNS
 
-# --- 3. 精准备份 ---
+# --- 3. 配置备份与出站识别 ---
+CONFIG_PATH="/usr/local/etc/xray/config.json"
+[ ! -f "$CONFIG_PATH" ] && CONFIG_PATH="/etc/xray/config.json"
+
 TIMESTAMP=$(date +%s)
 BACKUP_FILE="${CONFIG_PATH}.bak_${TIMESTAMP}"
 cp "$CONFIG_PATH" "$BACKUP_FILE"
 
-# 自动识别出站 Tag
+# 自动识别出站 Tag (direct 或 freedom)
 OUTBOUND_TAG=$(jq -r '.outbounds[] | select(.protocol=="freedom") | .tag' "$CONFIG_PATH" | head -n 1)
 [ -z "$OUTBOUND_TAG" ] && OUTBOUND_TAG="direct"
 
-# --- 4. 构建函数 ---
+# --- 4. 核心逻辑函数 ---
 NEW_DNS_SERVERS="[]"
 NEW_ROUTING_RULES="[]"
 
@@ -71,7 +70,7 @@ add_rule() {
     fi
 }
 
-# --- 5. 分配域名簇 ---
+# --- 5. 分配域名簇 (全量补全) ---
 add_rule "$YT_DNS" '["domain:youtube.com","domain:googlevideo.com","domain:youtu.be","domain:ytimg.com","domain:ggpht.com"]'
 add_rule "$NF_DNS" '["domain:netflix.com","domain:fast.com","domain:netflix.net","domain:nflxvideo.net","domain:nflxext.com","domain:nflxso.net","domain:nflximg.net","geosite:netflix"]'
 add_rule "$DS_DNS" '["domain:disneyplus.com","domain:disney.com","domain:dssott.com","domain:disneylatino.com"]'
@@ -84,7 +83,7 @@ add_rule "$CLD_DNS" '["domain:anthropic.com","domain:claude.ai"]'
 add_rule "$GMN_DNS" '["domain:gemini.google.com","domain:bard.google.com","domain:proactive.google.com"]'
 add_rule "$CPL_DNS" '["domain:bing.com","domain:edgeservices.bing.com","domain:copilot.microsoft.com"]'
 
-# --- 6. 注入与逻辑锁定 ---
+# --- 6. 注入配置并强制清理旧冲突 ---
 jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES" '
 .dns.servers = ($dns_svrs + ["localhost"]) |
 .dns.queryStrategy = "UseIPv4" |
@@ -100,12 +99,14 @@ jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES"
 )])
 ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
 
-# --- 7. 最终校验 ---
+# --- 7. 校验、重启与自我清理 ---
 /usr/local/bin/xray -test -config "$CONFIG_PATH"
 if [ $? -eq 0 ]; then
     systemctl restart xray
-    echo -e "${GREEN}✅ 终极全能版部署成功！${NC}"
+    echo -e "${GREEN}✅ 终极版部署成功！${NC}"
+    # 自我清理旧脚本
+    rm -f $0
 else
     mv "$BACKUP_FILE" "$CONFIG_PATH"
-    echo -e "${RED}❌ 配置校验失败，已自动恢复备份：$BACKUP_FILE${NC}"
+    echo -e "${RED}❌ 配置失败，已恢复原始备份：$BACKUP_FILE${NC}"
 fi
