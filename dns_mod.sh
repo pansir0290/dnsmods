@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ====================================================
-# Project: Xray DNS 终极全能全量版 (V6 - 11项交互)
+# Project: Xray DNS 终极全能版 (含资源文件自动补齐)
 # Author: pansir0290
 # ====================================================
 
@@ -13,9 +13,25 @@ NC='\033[0m'
 CONFIG_PATH="/usr/local/etc/xray/config.json"
 [ ! -f "$CONFIG_PATH" ] && CONFIG_PATH="/etc/xray/config.json"
 
-# 1. 欢迎信息与交互
-echo -e "${YELLOW}开始执行 Xray 全平台 DNS 分流配置 (V6 全量版)...${NC}"
-echo -e "${GREEN}请输入各平台对应的解锁 DNS (示例 8.8.8.8，回车跳过):${NC}"
+# --- 1. 自动补齐 geosite.dat 和 geoip.dat ---
+check_geo_files() {
+    local geo_dir="/usr/local/bin"
+    # 部分安装版本可能在 /usr/local/share/xray
+    [ ! -d "$geo_dir" ] && geo_dir="/usr/local/share/xray"
+    
+    if [ ! -f "$geo_dir/geosite.dat" ] || [ ! -f "$geo_dir/geoip.dat" ]; then
+        echo -e "${YELLOW}检测到缺少资源文件，正在自动补齐到 $geo_dir...${NC}"
+        wget -O "$geo_dir/geosite.dat" https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
+        wget -O "$geo_dir/geoip.dat" https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+        echo -e "${GREEN}资源文件补齐完成。${NC}"
+    fi
+}
+
+check_geo_files
+
+# --- 2. 交互式获取 DNS IP ---
+echo -e "${YELLOW}开始执行 Xray 全平台 DNS 分流配置 (V6.1 稳定版)...${NC}"
+echo -e "${GREEN}请输入各平台对应的解锁 DNS (回车跳过):${NC}"
 
 echo -e "${YELLOW}--- 视频流媒体 ---${NC}"
 read -p "1. YouTube DNS: " YT_DNS
@@ -32,14 +48,14 @@ read -p "9. Anthropic (Claude) DNS: " CLD_DNS
 read -p "10. Google Gemini DNS: " GMN_DNS
 read -p "11. Microsoft Copilot DNS: " CPL_DNS
 
-# 2. 备份
-cp "$CONFIG_PATH" "${CONFIG_PATH}.bak_$(date +%s)"
+# --- 3. 备份与识别 ---
+BACKUP_FILE="${CONFIG_PATH}.bak_$(date +%s)"
+cp "$CONFIG_PATH" "$BACKUP_FILE"
 
-# 3. 识别出站 Tag
 OUTBOUND_TAG=$(jq -r '.outbounds[] | select(.protocol=="freedom") | .tag' "$CONFIG_PATH" | head -n 1)
 [ -z "$OUTBOUND_TAG" ] && OUTBOUND_TAG="direct"
 
-# 4. 构建函数
+# --- 4. 构建函数 ---
 NEW_DNS_SERVERS="[]"
 NEW_ROUTING_RULES="[]"
 
@@ -52,7 +68,7 @@ add_rule() {
     fi
 }
 
-# 5. 分配域名簇 (全量补全)
+# --- 5. 分配域名簇 ---
 add_rule "$YT_DNS" '["domain:youtube.com","domain:googlevideo.com","domain:youtu.be","domain:ytimg.com","domain:ggpht.com"]'
 add_rule "$NF_DNS" '["domain:netflix.com","domain:fast.com","domain:netflix.net","domain:nflxvideo.net","domain:nflxext.com","domain:nflxso.net","domain:nflximg.net","geosite:netflix"]'
 add_rule "$DS_DNS" '["domain:disneyplus.com","domain:disney.com","domain:dssott.com","domain:disneylatino.com"]'
@@ -65,8 +81,7 @@ add_rule "$CLD_DNS" '["domain:anthropic.com","domain:claude.ai"]'
 add_rule "$GMN_DNS" '["domain:gemini.google.com","domain:bard.google.com","domain:proactive.google.com"]'
 add_rule "$CPL_DNS" '["domain:bing.com","domain:edgeservices.bing.com","domain:copilot.microsoft.com"]'
 
-# 6. 合并 JSON 并解决回环与测速定位
-# 加入 UseIPv4 策略，防止 IPv6 绕过分流导致定位失败
+# --- 6. 合并 JSON ---
 jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES" '
 .dns.servers = ($dns_svrs + ["localhost"]) |
 .dns.queryStrategy = "UseIPv4" |
@@ -82,12 +97,12 @@ jq --argjson dns_svrs "$NEW_DNS_SERVERS" --argjson rt_rules "$NEW_ROUTING_RULES"
 )])
 ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
 
-# 7. 检查与重启
+# --- 7. 检查与重启 ---
 /usr/local/bin/xray -test -config "$CONFIG_PATH"
 if [ $? -eq 0 ]; then
     systemctl restart xray
-    echo -e "${GREEN}✅ 终极全量版配置成功！共处理 11 项分流规则。${NC}"
+    echo -e "${GREEN}✅ 脚本执行成功！已自动补齐资源文件并完成分流。${NC}"
 else
-    mv "${CONFIG_PATH}.bak_*" "$CONFIG_PATH"
-    echo -e "${RED}❌ 配置错误，已自动回滚。${NC}"
+    mv "$BACKUP_FILE" "$CONFIG_PATH"
+    echo -e "${RED}❌ 配置校验失败，已自动恢复备份。${NC}"
 fi
