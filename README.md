@@ -17,4 +17,4 @@
 在你的 VPS 终端直接执行以下一键命令：
 
 ```bash
-wget -O dns_mod.sh [https://raw.githubusercontent.com/pansir0290/dnsmods/main/dns_mod.sh](https://raw.githubusercontent.com/pansir0290/dnsmods/main/dns_mod.sh) && bash dns_mod.sh
+wget -O dns_mod.sh https://raw.githubusercontent.com/pansir0290/dnsmods/main/dns_mod.sh && bash dns_mod.sh
