@@ -23,7 +23,8 @@ Xray DNS 分流自动配置工具 (DNSMods)
 在你的 VPS 终端直接执行以下一键命令：
 ```bash
 wget -O dns_mod.sh https://raw.githubusercontent.com/pansir0290/dnsmods/main/dns_mod.sh && bash dns_mod.sh
-```bash
+
+
 🛠️ 实现原理
 
 该脚本通过修改 Xray 的 routing 与 dns 模块，将 domainStrategy 设置为 IPOnDemand。当访问流媒体域名时，Xray 会拦截解析请求并定向发送至用户指定的解锁 DNS，从而获取特定区域的 IP 地址。
