@@ -32,11 +32,11 @@ wget -O dns_mod.sh https://raw.githubusercontent.com/pansir0290/dnsmods/main/dns
 该脚本通过修改 Xray 的 routing 与 dns 模块，将 domainStrategy 设置为 IPOnDemand。当访问流媒体域名时，Xray 会拦截解析请求并定向发送至用户指定的解锁 DNS，从而获取特定区域的 IP 地址。
 📋 依赖要求
 
-    系统：Debian / Ubuntu / CentOS
+系统：Debian / Ubuntu / CentOS
 
-    内核：Xray-core (已安装并正常运行)
+内核：Xray-core (已安装并正常运行)
 
-    工具：脚本会自动检查并安装 jq
+工具：脚本会自动检查并安装 jq
 
 📄 配置文件参考
 
@@ -56,9 +56,9 @@ JSON
 
 ⚠️ 注意事项
 
-    Tag 检查：请确保你的 Xray 配置中至少有一个 protocol 为 freedom 的出站规则。
+Tag 检查：请确保你的 Xray 配置中至少有一个 protocol 为 freedom 的出站规则。
 
-    客户端配置：建议在客户端（如 v2rayN/Clash）开启“嗅探 (Sniffing)”，以确保域名能正确传达至服务端触发分流逻辑。
+客户端配置：建议在客户端（如 v2rayN/Clash）开启“嗅探 (Sniffing)”，以确保域名能正确传达至服务端触发分流逻辑。
 
 🤝 贡献与反馈
 
